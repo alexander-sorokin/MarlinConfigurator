@@ -21,6 +21,7 @@ private:
   Ui::MainWindow *ui;
   void loadSettings();
   void saveSettings();
+  void analyzeConfigurationFiles(QString &directory);
 };
 
 #endif // MAINWINDOW_H
