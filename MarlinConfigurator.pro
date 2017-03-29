@@ -35,3 +35,6 @@ FORMS    += mainwindow.ui
 
 TRANSLATIONS = language/marlin-configurator_en_US.ts \
         language/marlin-configurator_ru_RU.ts
+
+RESOURCES += \
+    resources.qrc

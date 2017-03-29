@@ -4,15 +4,14 @@
 #include <QMainWindow>
 
 namespace Ui {
-class MainWindow;
+  class MainWindow;
 }
 
-class MainWindow : public QMainWindow
-{
+class MainWindow : public QMainWindow {
   Q_OBJECT
 
 public:
-  explicit MainWindow(QWidget *parent = 0);
+  explicit MainWindow(QWidget *parent = nullptr);
   ~MainWindow();
 
 protected:
@@ -20,6 +19,8 @@ protected:
 
 private:
   Ui::MainWindow *ui;
+  void loadSettings();
+  void saveSettings();
 };
 
 #endif // MAINWINDOW_H

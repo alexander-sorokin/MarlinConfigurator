@@ -35,6 +35,8 @@ int main(int argc, char *argv[]) {
   }
 
   MainWindow w;
+  w.setWindowTitle(QString("%1 %2").arg(VER_PRODUCTNAME_STR).arg(VER_FILEVERSION_STR));
+  w.setWindowIcon(QIcon(":/images/main-icon.png"));
   w.show();
 
   return a.exec();

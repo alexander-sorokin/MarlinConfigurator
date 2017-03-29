@@ -1,20 +1,19 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
-MainWindow::MainWindow(QWidget *parent) :
-  QMainWindow(parent),
-  ui(new Ui::MainWindow)
-{
+#include <QSettings>
+
+MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow) {
   ui->setupUi(this);
+  loadSettings();
+  connect(qApp, &QCoreApplication::aboutToQuit, this, &MainWindow::saveSettings);
 }
 
-MainWindow::~MainWindow()
-{
+MainWindow::~MainWindow() {
   delete ui;
 }
 
-void MainWindow::changeEvent(QEvent *e)
-{
+void MainWindow::changeEvent(QEvent *e) {
   QMainWindow::changeEvent(e);
   switch (e->type()) {
   case QEvent::LanguageChange:
@@ -23,4 +22,16 @@ void MainWindow::changeEvent(QEvent *e)
   default:
     break;
   }
+}
+
+void MainWindow::loadSettings() {
+  QSettings settings;
+  restoreGeometry(settings.value("geometry", "").toByteArray());
+  restoreState(settings.value("state", "").toByteArray());
+}
+
+void MainWindow::saveSettings() {
+  QSettings settings;
+  settings.setValue("geometry", saveGeometry());
+  settings.setValue("state", saveState());
 }
