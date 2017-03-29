@@ -4,9 +4,9 @@
 #
 #-------------------------------------------------
 
-QT       += core gui
+QT       += core gui  widgets
 
-greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
+CONFIG += c++14
 
 TARGET = MarlinConfigurator
 TEMPLATE = app
@@ -26,6 +26,12 @@ DEFINES += QT_DEPRECATED_WARNINGS
 SOURCES += main.cpp\
         mainwindow.cpp
 
-HEADERS  += mainwindow.h
+HEADERS  += mainwindow.h \
+    version.h
+
+RC_FILE = resources.rc
 
 FORMS    += mainwindow.ui
+
+TRANSLATIONS = language/marlin-configurator_en_US.ts \
+        language/marlin-configurator_ru_RU.ts
