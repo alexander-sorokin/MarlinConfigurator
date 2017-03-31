@@ -1,10 +1,10 @@
 #ifndef VERSION_H
 #define VERSION_H
 
-#define VER_FILEVERSION             1,0,0,53
-#define VER_FILEVERSION_STR         "1.0.0.53\0"
+#define VER_FILEVERSION             1,0,0,74
+#define VER_FILEVERSION_STR         "1.0.0.74\0"
 
-#define VER_PRODUCTVERSION          1,0,0,53
+#define VER_PRODUCTVERSION          1,0,0,74
 #define VER_PRODUCTVERSION_STR      "1.0\0"
 
 #define VER_COMPANYNAME_STR         "Alexander Sorokin"

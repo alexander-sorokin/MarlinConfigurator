@@ -2,6 +2,7 @@
 #include "version.h"
 #include <QApplication>
 #include <QDebug>
+#include <QFile>
 #include <QSettings>
 #include <QTranslator>
 #include <iostream>
@@ -33,6 +34,11 @@ int main(int argc, char *argv[]) {
   if (translator.load(QString(":/language/marlin-configurator_%1").arg(language))) {
     a.installTranslator(&translator);
   }
+
+  QFile style_file{"style.css"};
+  style_file.open(QFile::ReadOnly);
+  a.setStyleSheet(style_file.readAll());
+  style_file.close();
 
   MainWindow w;
   w.setWindowTitle(QString("%1 %2").arg(VER_PRODUCTNAME_STR).arg(VER_FILEVERSION_STR));

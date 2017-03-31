@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
+#include <QFormBuilder>
 #include <QGroupBox>
 #include <QLineEdit>
 #include <QSettings>
@@ -221,10 +222,19 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
           new_checkbox->setEnabled(qobject_cast<QGroupBox*>(depends_on)->isChecked());
           QString item_value = match.captured("value").trimmed();
           if (!item_value.isEmpty()) {
-            QLineEdit *value_edit = new QLineEdit(item_value);
-            value_edit->setEnabled(new_checkbox->isChecked());
-            connect(new_checkbox, &QCheckBox::toggled, value_edit, &QLineEdit::setEnabled);
-            qobject_cast<QGridLayout*>(depends_on->layout())->addWidget(value_edit, row, column + 1);
+            QWidget *value_edit = nullptr;
+            if (item_value.toLower() == "true" || item_value.toLower() == "false") {
+              value_edit = new QCheckBox(depends_on);
+              qobject_cast<QCheckBox*>(value_edit)->setChecked(item_value.toLower() == "true");
+            }
+            else {
+              value_edit = new QLineEdit(item_value, depends_on);
+            }
+            if (value_edit) {
+              value_edit->setEnabled(new_checkbox->isChecked());
+              connect(new_checkbox, &QCheckBox::toggled, value_edit, &QLineEdit::setEnabled);
+              qobject_cast<QGridLayout*>(depends_on->layout())->addWidget(value_edit, row, column + 1);
+            }
           }
           qobject_cast<QGridLayout*>(depends_on->layout())->setProperty("row", ++row);
         }
@@ -240,16 +250,28 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
           qobject_cast<QGridLayout*>(current_tab->layout())->addWidget(new_checkbox, row, column);
           QString item_value = match.captured("value").trimmed();
           if (!item_value.isEmpty()) {
-            QLineEdit *value_edit = new QLineEdit(item_value);
-            value_edit->setEnabled(new_checkbox->isChecked());
-            connect(new_checkbox, &QCheckBox::toggled, value_edit, &QLineEdit::setEnabled);
-            qobject_cast<QGridLayout*>(current_tab->layout())->addWidget(value_edit, row, column + 1);
+            QWidget *value_edit = nullptr;
+            if (item_value.toLower() == "true" || item_value.toLower() == "false") {
+              value_edit = new QCheckBox(current_tab);
+              qobject_cast<QCheckBox*>(value_edit)->setChecked(item_value.toLower() == "true");
+            }
+            else {
+              value_edit = new QLineEdit(item_value, current_tab);
+            }
+            if (value_edit) {
+              value_edit->setEnabled(new_checkbox->isChecked());
+              connect(new_checkbox, &QCheckBox::toggled, value_edit, &QLineEdit::setEnabled);
+              qobject_cast<QGridLayout*>(current_tab->layout())->addWidget(value_edit, row, column + 1);
+            }
           }
           qobject_cast<QGridLayout*>(current_tab->layout())->setProperty("row", ++row);
         }
         new_checkbox->setToolTip(match.captured("comment").trimmed());
         if (new_checkbox->toolTip().isEmpty()) {
           new_checkbox->setToolTip(match.captured("comment_pre").trimmed());
+        }
+        if (!new_checkbox->toolTip().isEmpty()) {
+          new_checkbox->setIcon(QIcon("/home/alexander/icons/oxygen/base/32x32/status/dialog-information.png"));
         }
         qDebug() << tabs.toStdString().data() << match.captured("disabled") << match.captured("name") << match.captured("value") << match.captured("comment") << match.captured("comment_pre"); //.remove(QRegularExpression("[/\\n]"))
     }
@@ -284,7 +306,52 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
 
 //      qobject_cast<QGridLayout*>(section->layout())->addWidget(group, ++row, column);
     }
-
+    QList<QCheckBox*> checks = section->findChildren<QCheckBox*>();
+    row = qobject_cast<QGridLayout*>(section->layout())->property("row").toInt();
+    column = qobject_cast<QGridLayout*>(section->layout())->property("column").toInt();
+    QPoint place{-1, -1};
+    QList<QPoint> places;
+    for (int c = 0; c < column + 2; c += 2) {
+      for (int r = 0; r < 16; ++r) {
+        QLayoutItem *item = qobject_cast<QGridLayout*>(section->layout())->itemAtPosition(r, c);
+        if (!item) {
+          qDebug() << "No item at" << r << c;
+          places.append(QPoint(c, r));
+          continue;
+        }
+        QWidget *tem_widget = item->widget();
+        if (!qobject_cast<QCheckBox*>(tem_widget)) {
+          continue;
+        }
+        if (tem_widget) {
+          if (!places.isEmpty()) {
+            QPoint place = places.takeFirst();
+            qobject_cast<QGridLayout*>(section->layout())->removeWidget(tem_widget);
+            qobject_cast<QGridLayout*>(section->layout())->addWidget(tem_widget, place.y(), place.x());
+            QLayoutItem *input_item = qobject_cast<QGridLayout*>(section->layout())->itemAtPosition(r, c + 1);
+            if (input_item) {
+              QWidget *tem_input_widget = input_item->widget();
+              if (tem_input_widget) {
+                qobject_cast<QGridLayout*>(section->layout())->removeWidget(tem_input_widget);
+                qobject_cast<QGridLayout*>(section->layout())->addWidget(tem_input_widget, place.y(), place.x() + 1);
+              }
+            }
+            qDebug() << "Moving" << qobject_cast<QCheckBox*>(tem_widget)->text() << place.y() << place.x();
+            places.append(QPoint(c, r));
+          }
+        }
+        else {
+          places.append(QPoint(c, r));
+        }
+      }
+    }
+//    foreach (QCheckBox *check, checks) {
+//      if (row > 15) {
+//        row = 0;
+//        column += 2;
+//      }
+//      QWidget *tem_widget = qobject_cast<QGridLayout*>(section->layout())->itemAtPosition(row, column)->widget();
+//      ++row;
+//    }
   }
-
 }
