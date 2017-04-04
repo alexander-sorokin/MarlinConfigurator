@@ -59,7 +59,7 @@ void MainWindow::saveSettings() {
 void MainWindow::analyzeConfigurationFiles(QString &directory) {
   QFile inputFile{directory + QDir::separator() + "Configuration.h"};
 
-  qDebug() << inputFile.fileName();
+//  qDebug() << inputFile.fileName();
 
   if (!inputFile.open(QFile::ReadOnly)) {
     return;
@@ -72,12 +72,20 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
 
   QRegularExpressionMatchIterator section_match_iterator = section_regexp.globalMatch(file_data);
 //[\\s\\t]*//[\\s\\t]*?(?<comment_pre>.*?)?
-  QRegularExpression define_regexp{""
+//  QRegularExpression define_regexp{"(?<comment_pre>\\n{2}[\\s\\t]*//.*?)?"
+//                                   "\\n[\\s\\t]*?(?<disabled>[/]*)?"
+//                                   "[\\s\\t]*#define"
+//                                   "[\\s\\t]*(?<name>\\w+)"
+//                                   "[\\s\\t]*?(?<value>[^\\n]*)?"
+//                                   "[\\s\\t]*?(?<comment>//[^\\n]*)?", QRegularExpression::CaseInsensitiveOption | QRegularExpression::MultilineOption | QRegularExpression::DotMatchesEverythingOption};
+
+  QRegularExpression define_regexp{"(?<comment_pre>\\n{2}[\\s\\t]*//.*?)?"
                                    "\\n[\\s\\t]*?(?<disabled>[/]*)?"
                                    "[\\s\\t]*#define"
                                    "[\\s\\t]*(?<name>\\w+)"
                                    "[\\s\\t]*?(?<value>[^\\n/]*)?"
-                                   "[\\s\\t/]*?(?<comment>[^\\n]*)?", QRegularExpression::CaseInsensitiveOption | QRegularExpression::MultilineOption | QRegularExpression::DotMatchesEverythingOption};
+                                   "[\\s\\t]*?(?<comment>[^\\n]*)?", QRegularExpression::CaseInsensitiveOption | QRegularExpression::MultilineOption | QRegularExpression::DotMatchesEverythingOption};
+
 
   QMap<int, QString> sections;
   QList<int> section_addresses;
@@ -108,7 +116,7 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
   for (int i = 0; i < section_addresses.count(); ++i) {
     int begin = section_addresses[i];
     int end = (section_addresses.count() - 1 == i) ? file_data.size() : section_addresses[i + 1] ;
-    qDebug() << "\nSECTION" << sections.value(section_addresses[i]);
+//    qDebug() << "\nSECTION" << sections.value(section_addresses[i]);
     QWidget *current_tab = section_tabs.value(sections.value(section_addresses[i]));
 
     QStringRef section_data = file_data.midRef(begin, end - begin);
@@ -121,7 +129,7 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
     while (if_match_iterator.hasNext()) {
         QRegularExpressionMatch match = if_match_iterator.next();
         int begin_if_match = match.capturedStart("title");
-        qDebug() << match.captured("condition") + " " + match.captured("title") << begin_if_match << section_data.indexOf("#endif", begin_if_match);
+//        qDebug() << match.captured("condition") + " " + match.captured("title") << begin_if_match << section_data.indexOf("#endif", begin_if_match);
         ifs.insert(begin_if_match, match.captured("condition") + " " + match.captured("title"));
         if_addresses.append(begin_if_match);
         if_addresses.append(section_data.indexOf("#endif", begin_if_match));
@@ -134,7 +142,7 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
 
     while (if_value_match_iterator.hasNext()) {
         QRegularExpressionMatch match = if_value_match_iterator.next();
-        qDebug() << match.captured("title") << match.captured("sign") << match.captured("value");
+//        qDebug() << match.captured("title") << match.captured("sign") << match.captured("value");
         int begin_if_match = match.capturedStart("title");
         if_values.insert(begin_if_match, match.captured("title") + " " + match.captured("sign") + " " + match.captured("value"));
         if_value_addresses.append(begin_if_match);
@@ -158,7 +166,7 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
             found_if_b = true;
             if (found_if.isEmpty()) {
               found_if = ifs.value(if_addresses[j]);
-              qDebug() << tabs.toStdString().data() << "#if" << found_if;
+//              qDebug() << tabs.toStdString().data() << "#if" << found_if;
 
             }
             QStringList found_list = found_if.split(' ');
@@ -193,19 +201,42 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
             tabs += "\t";
             if (found_if.isEmpty()) {
               found_if = if_values.value(if_value_addresses[j]);
-              qDebug() << tabs.toStdString().data() << "#if" << found_if;
+//              qDebug() << tabs.toStdString().data() << "#if" << found_if;
             }
             break;
           }
           found_if.clear();
         }
-        QCheckBox *new_checkbox = new QCheckBox(match.captured("name"), current_tab);
-        new_checkbox->setChecked(match.captured("disabled") != "//");
-        elements.insert(match.captured("name"), new_checkbox);
+
+        bool disabled = match.captured("disabled").trimmed() != "//";
+        QString name = match.captured("name").trimmed();
+        QString value = match.captured("value").trimmed();
+        QString comment = match.captured("comment").trimmed();
+        QString comment_pre = match.captured("comment_pre").remove(QRegularExpression{"\\n[\\s\\t]*//"}).trimmed();//.remove(QRegularExpression{"[^:]//"})
+        if (comment.indexOf(QRegularExpression{"[^:]//"}) > 0) {
+          value = match.captured("value") + comment.left(comment.indexOf(QRegularExpression{"[^:]//"}));
+          value = value.trimmed();
+          comment = comment.right(comment.length() - (comment.indexOf(QRegularExpression{"[^:]//"}) + 3)).trimmed();
+        }
+        else {
+          comment = comment.remove(QRegularExpression{"^//"}).trimmed();
+        }
+        if (!comment.isEmpty()) {
+          comment[0] = comment[0].toUpper();
+        }
+        if (!comment_pre.isEmpty()) {
+          comment_pre[0] = comment_pre[0].toUpper();
+        }
+        comment += '\n' + comment_pre;
+        comment = comment.trimmed();
+
+        QCheckBox *new_checkbox = new QCheckBox(name, current_tab);
+        new_checkbox->setChecked(disabled);
+        elements.insert(name, new_checkbox);
         if (depends_on) {
           int row = qobject_cast<QGridLayout*>(depends_on->layout())->property("row").toInt();
           int column = qobject_cast<QGridLayout*>(depends_on->layout())->property("column").toInt();
-          if (row > 15) {
+          if (row > MAX_ROWS) {
             qobject_cast<QGridLayout*>(depends_on->layout())->addItem(new QSpacerItem(40, 20, QSizePolicy::Minimum, QSizePolicy::Expanding), row, column);
             row = 0;
             column += 2;
@@ -220,7 +251,7 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
             connect(qobject_cast<QGroupBox*>(depends_on), &QGroupBox::toggled, new_checkbox, &QCheckBox::setDisabled);
           }
           new_checkbox->setEnabled(qobject_cast<QGroupBox*>(depends_on)->isChecked());
-          QString item_value = match.captured("value").trimmed();
+          QString item_value = value;
           if (!item_value.isEmpty()) {
             QWidget *value_edit = nullptr;
             if (item_value.toLower() == "true" || item_value.toLower() == "false") {
@@ -241,14 +272,14 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
         else {
           int row = qobject_cast<QGridLayout*>(current_tab->layout())->property("row").toInt();
           int column = qobject_cast<QGridLayout*>(current_tab->layout())->property("column").toInt();
-          if (row > 15) {
+          if (row > MAX_ROWS) {
             qobject_cast<QGridLayout*>(current_tab->layout())->addItem(new QSpacerItem(40, 20, QSizePolicy::Minimum, QSizePolicy::Expanding), row, column);
             row = 0;
             column += 2;
             qobject_cast<QGridLayout*>(current_tab->layout())->setProperty("column", column);
           }
           qobject_cast<QGridLayout*>(current_tab->layout())->addWidget(new_checkbox, row, column);
-          QString item_value = match.captured("value").trimmed();
+          QString item_value = value;
           if (!item_value.isEmpty()) {
             QWidget *value_edit = nullptr;
             if (item_value.toLower() == "true" || item_value.toLower() == "false") {
@@ -266,56 +297,66 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
           }
           qobject_cast<QGridLayout*>(current_tab->layout())->setProperty("row", ++row);
         }
-        new_checkbox->setToolTip(match.captured("comment").trimmed());
-        if (new_checkbox->toolTip().isEmpty()) {
-          new_checkbox->setToolTip(match.captured("comment_pre").trimmed());
-        }
-        if (!new_checkbox->toolTip().isEmpty()) {
+        new_checkbox->setToolTip(comment);
+        if (!comment.isEmpty()) {
           new_checkbox->setIcon(QIcon("/home/alexander/icons/oxygen/base/32x32/status/dialog-information.png"));
         }
-        qDebug() << tabs.toStdString().data() << match.captured("disabled") << match.captured("name") << match.captured("value") << match.captured("comment") << match.captured("comment_pre"); //.remove(QRegularExpression("[/\\n]"))
+//        qDebug() << tabs.toStdString().data() << match.captured("disabled") << name << value << comment << comment_pre; //.remove(QRegularExpression("[/\\n]"))
     }
   }
+
 
   QMapIterator<QString, QWidget*> sections_iterator{section_tabs};
   while (sections_iterator.hasNext()) {
     sections_iterator.next();
     QWidget *section = sections_iterator.value();
     QList<QGroupBox*> groups = section->findChildren<QGroupBox*>();
-    int row = qobject_cast<QGridLayout*>(section->layout())->property("row").toInt();
     int column = qobject_cast<QGridLayout*>(section->layout())->property("column").toInt();
     QWidget *container_widget = new QWidget(section);
-    container_widget->setLayout(new QGridLayout(container_widget));
-    qobject_cast<QGridLayout*>(section->layout())->addWidget(container_widget, 0, column + 2, 15, 2);
-    row = 0;
-    column = 0;
+    container_widget->setLayout(new QHBoxLayout(container_widget));
+    container_widget->layout()->setMargin(0);
+    qobject_cast<QGridLayout*>(section->layout())->addWidget(container_widget, 0, column + 2, MAX_ROWS, 2);
+    QWidget *container_groups_widget = new QWidget(container_widget);
+    container_groups_widget->setLayout(new QVBoxLayout(container_groups_widget));
+    container_groups_widget->layout()->setMargin(0);
+    qobject_cast<QHBoxLayout*>(container_widget->layout())->addWidget(container_groups_widget);
+    int temp_height = 0;
     foreach (QGroupBox *group, groups) {
-//      if (row > 15) {
+//      if (row > MAX_ROWS) {
 //        qobject_cast<QGridLayout*>(section->layout())->addItem(new QSpacerItem(40, 20, QSizePolicy::Minimum, QSizePolicy::Expanding), row, column);
 //        row = 0;
 //        column += 2;
 //        qobject_cast<QGridLayout*>(section->layout())->setProperty("column", column);
 //      }
-      ++row;
-      if (group->height() > container_widget->height()) {
-        ++column;
-        row = 0;
+      group->adjustSize();
+      temp_height += group->height();
+//      qDebug() << group->title() << group->size();
+      if (temp_height > 512) {
+        qobject_cast<QVBoxLayout*>(container_groups_widget->layout())->addItem(new QSpacerItem(40, 20, QSizePolicy::Minimum, QSizePolicy::Expanding));
+        container_groups_widget = new QWidget(container_widget);
+        container_groups_widget->setLayout(new QVBoxLayout(container_groups_widget));
+        container_groups_widget->layout()->setMargin(0);
+        qobject_cast<QHBoxLayout*>(container_widget->layout())->addWidget(container_groups_widget);
+        temp_height = group->height();
+
       }
       qobject_cast<QGridLayout*>(section->layout())->removeWidget(group);
-      qobject_cast<QGridLayout*>(container_widget->layout())->addWidget(group, row, column);
+      qobject_cast<QVBoxLayout*>(container_groups_widget->layout())->addWidget(group);
 
 //      qobject_cast<QGridLayout*>(section->layout())->addWidget(group, ++row, column);
     }
+    qobject_cast<QVBoxLayout*>(container_groups_widget->layout())->addItem(new QSpacerItem(40, 20, QSizePolicy::Minimum, QSizePolicy::Expanding));
+
     QList<QCheckBox*> checks = section->findChildren<QCheckBox*>();
-    row = qobject_cast<QGridLayout*>(section->layout())->property("row").toInt();
+    int row = row = qobject_cast<QGridLayout*>(section->layout())->property("row").toInt();
     column = qobject_cast<QGridLayout*>(section->layout())->property("column").toInt();
     QPoint place{-1, -1};
     QList<QPoint> places;
     for (int c = 0; c < column + 2; c += 2) {
-      for (int r = 0; r < 16; ++r) {
+      for (int r = 0; r <= MAX_ROWS; ++r) {
         QLayoutItem *item = qobject_cast<QGridLayout*>(section->layout())->itemAtPosition(r, c);
         if (!item) {
-          qDebug() << "No item at" << r << c;
+//          qDebug() << "No item at" << r << c;
           places.append(QPoint(c, r));
           continue;
         }
@@ -336,7 +377,7 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
                 qobject_cast<QGridLayout*>(section->layout())->addWidget(tem_input_widget, place.y(), place.x() + 1);
               }
             }
-            qDebug() << "Moving" << qobject_cast<QCheckBox*>(tem_widget)->text() << place.y() << place.x();
+//            qDebug() << "Moving" << qobject_cast<QCheckBox*>(tem_widget)->text() << place.y() << place.x();
             places.append(QPoint(c, r));
           }
         }
@@ -346,12 +387,14 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
       }
     }
 //    foreach (QCheckBox *check, checks) {
-//      if (row > 15) {
+//      if (row > MAX_ROWS) {
 //        row = 0;
 //        column += 2;
 //      }
 //      QWidget *tem_widget = qobject_cast<QGridLayout*>(section->layout())->itemAtPosition(row, column)->widget();
 //      ++row;
 //    }
+    qobject_cast<QGridLayout*>(section->layout())->addItem(new QSpacerItem(40, 20, QSizePolicy::Expanding, QSizePolicy::Minimum), 0, column + 4);
   }
+  adjustSize();
 }

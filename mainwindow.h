@@ -7,6 +7,8 @@ namespace Ui {
   class MainWindow;
 }
 
+#define MAX_ROWS 20
+
 class MainWindow : public QMainWindow {
   Q_OBJECT
 
