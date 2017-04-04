@@ -79,7 +79,7 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
 //                                   "[\\s\\t]*?(?<value>[^\\n]*)?"
 //                                   "[\\s\\t]*?(?<comment>//[^\\n]*)?", QRegularExpression::CaseInsensitiveOption | QRegularExpression::MultilineOption | QRegularExpression::DotMatchesEverythingOption};
 
-  QRegularExpression define_regexp{"(?<comment_pre>\\n{2}[\\s\\t]*//.*?)?"
+  QRegularExpression define_regexp{"(?<comment_pre>\\n{2}[\\s\\t]*//[^#].*?)?"
                                    "\\n[\\s\\t]*?(?<disabled>[/]*)?"
                                    "[\\s\\t]*#define"
                                    "[\\s\\t]*(?<name>\\w+)"
@@ -213,10 +213,18 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
         QString value = match.captured("value").trimmed();
         QString comment = match.captured("comment").trimmed();
         QString comment_pre = match.captured("comment_pre").remove(QRegularExpression{"\\n[\\s\\t]*//"}).trimmed();//.remove(QRegularExpression{"[^:]//"})
-        if (comment.indexOf(QRegularExpression{"[^:]//"}) > 0) {
-          value = match.captured("value") + comment.left(comment.indexOf(QRegularExpression{"[^:]//"}));
-          value = value.trimmed();
-          comment = comment.right(comment.length() - (comment.indexOf(QRegularExpression{"[^:]//"}) + 3)).trimmed();
+        if (comment.left(2) != "//") {
+          int index_of_backslash = comment.indexOf(QRegularExpression{"[^:]//"});
+          if (index_of_backslash > 0) {
+            value = match.captured("value") + comment.left(index_of_backslash);
+            value = value.trimmed();
+            comment = comment.right(comment.length() - (index_of_backslash + 3)).trimmed();
+          }
+          else {
+            value = match.captured("value") + comment;
+            value = value.trimmed();
+            comment = "";
+          }
         }
         else {
           comment = comment.remove(QRegularExpression{"^//"}).trimmed();
