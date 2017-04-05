@@ -2,12 +2,16 @@
 #include "ui_mainwindow.h"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QFormBuilder>
 #include <QGroupBox>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLineEdit>
 #include <QSettings>
 #include <QVBoxLayout>
@@ -24,6 +28,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     directory_dialog.setFileMode(QFileDialog::Directory);
     if (directory_dialog.exec()) {
       analyzeConfigurationFiles(directory_dialog.selectedFiles().first());
+      settings.setValue("directory", directory_dialog.directory().path());
+    }
+  });
+  connect(ui->action_save_configuration, &QAction::triggered, [=](bool){
+    QSettings settings;
+    QFileDialog directory_dialog(this);
+    directory_dialog.setDirectory(settings.value("directory", QDir::homePath()).toString());
+    directory_dialog.setFileMode(QFileDialog::Directory);
+    if (directory_dialog.exec()) {
+      saveConfigurationFile(directory_dialog.selectedFiles().first());
       settings.setValue("directory", directory_dialog.directory().path());
     }
   });
@@ -68,6 +82,8 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
   QString file_data = inputFile.readAll();
   inputFile.close();
 
+  original_file_data = file_data;
+
   QRegularExpression section_regexp{"@section (?<title>\\w+)", QRegularExpression::CaseInsensitiveOption};
 
   QRegularExpressionMatchIterator section_match_iterator = section_regexp.globalMatch(file_data);
@@ -79,7 +95,7 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
 //                                   "[\\s\\t]*?(?<value>[^\\n]*)?"
 //                                   "[\\s\\t]*?(?<comment>//[^\\n]*)?", QRegularExpression::CaseInsensitiveOption | QRegularExpression::MultilineOption | QRegularExpression::DotMatchesEverythingOption};
 
-  QRegularExpression define_regexp{"(?<comment_pre>\\n{2}[\\s\\t]*//[^#].*?)?"
+  QRegularExpression define_regexp{"(?<comment_pre>\\n{2}[\\s\\t]*/[/*][^#].*?)?"
                                    "\\n[\\s\\t]*?(?<disabled>[/]*)?"
                                    "[\\s\\t]*#define"
                                    "[\\s\\t]*(?<name>\\w+)"
@@ -89,9 +105,7 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
 
   QMap<int, QString> sections;
   QList<int> section_addresses;
-
-  QMap<QString, QWidget*> section_tabs;
-  QMap<QString, QWidget*> elements;
+  QMap<QString, QLayout*> items_layouts;
 
   while (section_match_iterator.hasNext()) {
       QRegularExpressionMatch match = section_match_iterator.next();
@@ -212,7 +226,7 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
         QString name = match.captured("name").trimmed();
         QString value = match.captured("value").trimmed();
         QString comment = match.captured("comment").trimmed();
-        QString comment_pre = match.captured("comment_pre").remove(QRegularExpression{"\\n[\\s\\t]*//"}).trimmed();//.remove(QRegularExpression{"[^:]//"})
+        QString comment_pre = match.captured("comment_pre").replace(QRegularExpression{"\\n[\\s\\t/\\*]+"}, "\n").trimmed();//.remove(QRegularExpression{"[^:]//"})
         if (comment.left(2) != "//") {
           int index_of_backslash = comment.indexOf(QRegularExpression{"[^:]//"});
           if (index_of_backslash > 0) {
@@ -232,82 +246,139 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
         if (!comment.isEmpty()) {
           comment[0] = comment[0].toUpper();
         }
+        QString json_data;
         if (!comment_pre.isEmpty()) {
           comment_pre[0] = comment_pre[0].toUpper();
+          QRegularExpression json_expression{":[\\s\\t]*(?<json>[\\[\\{].*?[\\]\\}])"};
+          QRegularExpressionMatch json_expression_match = json_expression.match(comment_pre);
+          if (json_expression_match.hasMatch()) {
+            json_data = json_expression_match.captured("json");
+            comment_pre.remove(json_expression);
+          }
         }
         comment += '\n' + comment_pre;
         comment = comment.trimmed();
-
-        QCheckBox *new_checkbox = new QCheckBox(name, current_tab);
-        new_checkbox->setChecked(disabled);
-        elements.insert(name, new_checkbox);
-        if (depends_on) {
-          int row = qobject_cast<QGridLayout*>(depends_on->layout())->property("row").toInt();
-          int column = qobject_cast<QGridLayout*>(depends_on->layout())->property("column").toInt();
-          if (row > MAX_ROWS) {
-            qobject_cast<QGridLayout*>(depends_on->layout())->addItem(new QSpacerItem(40, 20, QSizePolicy::Minimum, QSizePolicy::Expanding), row, column);
-            row = 0;
-            column += 2;
-            qobject_cast<QGridLayout*>(depends_on->layout())->setProperty("column", column);
+        if (elements.contains(name)) {
+          QWidget *value_edit = values.value(name, nullptr);
+          QComboBox *value_combo_box = qobject_cast<QComboBox*>(value_edit);
+          QLineEdit *value_line_edit = qobject_cast<QLineEdit*>(value_edit);
+          if (value_combo_box != nullptr) {
+            //if (value_combo_box->findText(value) == -1) {
+              value_combo_box->addItem(value);
+            //}
           }
-          new_checkbox->setParent(depends_on);
-          qobject_cast<QGridLayout*>(depends_on->layout())->addWidget(new_checkbox, row, column);
-          if (depend_type) {
-            connect(qobject_cast<QGroupBox*>(depends_on), &QGroupBox::toggled, new_checkbox, &QCheckBox::setEnabled);
-          }
-          else {
-            connect(qobject_cast<QGroupBox*>(depends_on), &QGroupBox::toggled, new_checkbox, &QCheckBox::setDisabled);
-          }
-          new_checkbox->setEnabled(qobject_cast<QGroupBox*>(depends_on)->isChecked());
-          QString item_value = value;
-          if (!item_value.isEmpty()) {
-            QWidget *value_edit = nullptr;
-            if (item_value.toLower() == "true" || item_value.toLower() == "false") {
-              value_edit = new QCheckBox(depends_on);
-              qobject_cast<QCheckBox*>(value_edit)->setChecked(item_value.toLower() == "true");
-            }
-            else {
-              value_edit = new QLineEdit(item_value, depends_on);
-            }
-            if (value_edit) {
-              value_edit->setEnabled(new_checkbox->isChecked());
-              connect(new_checkbox, &QCheckBox::toggled, value_edit, &QLineEdit::setEnabled);
-              qobject_cast<QGridLayout*>(depends_on->layout())->addWidget(value_edit, row, column + 1);
+          else if (value_line_edit != nullptr) {
+            if (items_layouts.contains(name) && value_line_edit->text() != value) {
+              value_combo_box = new QComboBox(items_layouts.value(name)->widget());
+              value_combo_box->addItem(value_line_edit->text());
+              value_combo_box->addItem(value);
+              value_combo_box->setEditable(true);
+              value_combo_box->setEnabled(value_line_edit->isEnabled());
+              QCheckBox *depend_on_checkbox = static_cast<QCheckBox*>(value_line_edit->property("checkbox").value<void*>());
+              if (depend_on_checkbox) {
+                connect(depend_on_checkbox, &QCheckBox::toggled, value_combo_box, &QWidget::setEnabled);
+              }
+              items_layouts.value(name)->replaceWidget(value_line_edit, value_combo_box);
+              value_line_edit->deleteLater();
+              values.remove(name);
+              values.insert(name, value_combo_box);
             }
           }
-          qobject_cast<QGridLayout*>(depends_on->layout())->setProperty("row", ++row);
+          if (value_edit && !value.isEmpty()) {
+            value_edit->setToolTip((value_edit->toolTip().isEmpty() ? "" : value_edit->toolTip() + "\n") + comment + " - " + value);
+          }
         }
         else {
-          int row = qobject_cast<QGridLayout*>(current_tab->layout())->property("row").toInt();
-          int column = qobject_cast<QGridLayout*>(current_tab->layout())->property("column").toInt();
-          if (row > MAX_ROWS) {
-            qobject_cast<QGridLayout*>(current_tab->layout())->addItem(new QSpacerItem(40, 20, QSizePolicy::Minimum, QSizePolicy::Expanding), row, column);
-            row = 0;
-            column += 2;
-            qobject_cast<QGridLayout*>(current_tab->layout())->setProperty("column", column);
-          }
-          qobject_cast<QGridLayout*>(current_tab->layout())->addWidget(new_checkbox, row, column);
-          QString item_value = value;
-          if (!item_value.isEmpty()) {
-            QWidget *value_edit = nullptr;
-            if (item_value.toLower() == "true" || item_value.toLower() == "false") {
-              value_edit = new QCheckBox(current_tab);
-              qobject_cast<QCheckBox*>(value_edit)->setChecked(item_value.toLower() == "true");
+          original_values.insert(name, value);
+          QCheckBox *new_checkbox = new QCheckBox(name, current_tab);
+          new_checkbox->setChecked(disabled);
+          elements.insert(name, new_checkbox);
+          if (depends_on) {
+            int row = qobject_cast<QGridLayout*>(depends_on->layout())->property("row").toInt();
+            int column = qobject_cast<QGridLayout*>(depends_on->layout())->property("column").toInt();
+            if (row > MAX_ROWS) {
+              qobject_cast<QGridLayout*>(depends_on->layout())->addItem(new QSpacerItem(40, 20, QSizePolicy::Minimum, QSizePolicy::Expanding), row, column);
+              row = 0;
+              column += 2;
+              qobject_cast<QGridLayout*>(depends_on->layout())->setProperty("column", column);
+            }
+            new_checkbox->setParent(depends_on);
+            qobject_cast<QGridLayout*>(depends_on->layout())->addWidget(new_checkbox, row, column);
+            if (depend_type) {
+              connect(qobject_cast<QGroupBox*>(depends_on), &QGroupBox::toggled, new_checkbox, &QCheckBox::setEnabled);
             }
             else {
-              value_edit = new QLineEdit(item_value, current_tab);
+              connect(qobject_cast<QGroupBox*>(depends_on), &QGroupBox::toggled, new_checkbox, &QCheckBox::setDisabled);
             }
-            if (value_edit) {
-              value_edit->setEnabled(new_checkbox->isChecked());
-              connect(new_checkbox, &QCheckBox::toggled, value_edit, &QLineEdit::setEnabled);
-              qobject_cast<QGridLayout*>(current_tab->layout())->addWidget(value_edit, row, column + 1);
+            new_checkbox->setEnabled(qobject_cast<QGroupBox*>(depends_on)->isChecked());
+            QString item_value = value;
+            if (!item_value.isEmpty()) {
+              QWidget *value_edit = nullptr;
+              if (item_value.toLower() == "true" || item_value.toLower() == "false") {
+                value_edit = new QCheckBox(depends_on);
+                qobject_cast<QCheckBox*>(value_edit)->setChecked(item_value.toLower() == "true");
+              }
+              else {
+                if (json_data.isEmpty()) {
+                  value_edit = new QLineEdit(item_value, depends_on);
+                }
+                else {
+                  value_edit = new QComboBox(depends_on);
+                  parseJson(json_data, qobject_cast<QComboBox*>(value_edit));
+                }
+              }
+              if (value_edit) {
+                values.insert(name, value_edit);
+                value_edit->setEnabled(new_checkbox->isChecked());
+                value_edit->setProperty("checkbox", QVariant::fromValue(static_cast<void*>(new_checkbox)));
+                connect(new_checkbox, &QCheckBox::toggled, value_edit, &QWidget::setEnabled);
+                qobject_cast<QGridLayout*>(depends_on->layout())->addWidget(value_edit, row, column + 1);
+                items_layouts.insert(name, depends_on->layout());
+              }
             }
+            qobject_cast<QGridLayout*>(depends_on->layout())->setProperty("row", ++row);
           }
-          qobject_cast<QGridLayout*>(current_tab->layout())->setProperty("row", ++row);
-        }
-        new_checkbox->setToolTip(comment);
-        if (!comment.isEmpty()) {
-          new_checkbox->setIcon(QIcon("/home/alexander/icons/oxygen/base/32x32/status/dialog-information.png"));
+          else {
+            int row = qobject_cast<QGridLayout*>(current_tab->layout())->property("row").toInt();
+            int column = qobject_cast<QGridLayout*>(current_tab->layout())->property("column").toInt();
+            if (row > MAX_ROWS) {
+              qobject_cast<QGridLayout*>(current_tab->layout())->addItem(new QSpacerItem(40, 20, QSizePolicy::Minimum, QSizePolicy::Expanding), row, column);
+              row = 0;
+              column += 2;
+              qobject_cast<QGridLayout*>(current_tab->layout())->setProperty("column", column);
+            }
+            qobject_cast<QGridLayout*>(current_tab->layout())->addWidget(new_checkbox, row, column);
+            QString item_value = value;
+            if (!item_value.isEmpty()) {
+              QWidget *value_edit = nullptr;
+              if (item_value.toLower() == "true" || item_value.toLower() == "false") {
+                value_edit = new QCheckBox(current_tab);
+                qobject_cast<QCheckBox*>(value_edit)->setChecked(item_value.toLower() == "true");
+              }
+              else {
+                if (json_data.isEmpty()) {
+                  value_edit = new QLineEdit(item_value, depends_on);
+                }
+                else {
+                  value_edit = new QComboBox(depends_on);
+                  parseJson(json_data, qobject_cast<QComboBox*>(value_edit));
+                }
+              }
+              if (value_edit) {
+                values.insert(name, value_edit);
+                value_edit->setEnabled(new_checkbox->isChecked());
+                value_edit->setProperty("checkbox", QVariant::fromValue(static_cast<void*>(new_checkbox)));
+                connect(new_checkbox, &QCheckBox::toggled, value_edit, &QWidget::setEnabled);
+                qobject_cast<QGridLayout*>(current_tab->layout())->addWidget(value_edit, row, column + 1);
+                items_layouts.insert(name, current_tab->layout());
+              }
+            }
+            qobject_cast<QGridLayout*>(current_tab->layout())->setProperty("row", ++row);
+          }
+          new_checkbox->setToolTip(comment);
+          if (!comment.isEmpty()) {
+            new_checkbox->setIcon(QIcon("/home/alexander/icons/oxygen/base/32x32/status/dialog-information.png"));
+          }
         }
 //        qDebug() << tabs.toStdString().data() << match.captured("disabled") << name << value << comment << comment_pre; //.remove(QRegularExpression("[/\\n]"))
     }
@@ -405,4 +476,98 @@ void MainWindow::analyzeConfigurationFiles(QString &directory) {
     qobject_cast<QGridLayout*>(section->layout())->addItem(new QSpacerItem(40, 20, QSizePolicy::Expanding, QSizePolicy::Minimum), 0, column + 4);
   }
   adjustSize();
+}
+
+void MainWindow::saveConfigurationFile(QString &directory) {
+  QMapIterator<QString, QWidget*> elements_iterator{elements};
+  while (elements_iterator.hasNext()) {
+    elements_iterator.next();
+    if (values.contains(elements_iterator.key())) {
+      QString value;
+      if (qobject_cast<QLineEdit*>(values.value(elements_iterator.key()))) {
+        value = qobject_cast<QLineEdit*>(values.value(elements_iterator.key()))->text();
+      }
+      else if (qobject_cast<QComboBox*>(values.value(elements_iterator.key()))) {
+        if (qobject_cast<QComboBox*>(values.value(elements_iterator.key()))->currentData().toString().isEmpty()) {
+          value = qobject_cast<QComboBox*>(values.value(elements_iterator.key()))->currentText();
+        }
+        else {
+          value = qobject_cast<QComboBox*>(values.value(elements_iterator.key()))->currentData().toString();
+        }
+      }
+      else if (qobject_cast<QCheckBox*>(values.value(elements_iterator.key()))) {
+        value = qobject_cast<QCheckBox*>(values.value(elements_iterator.key()))->isChecked() ? "true" : "false";
+      }
+
+      QString enabled = qobject_cast<QCheckBox*>(elements_iterator.value())->isChecked() ? "" : "//";
+      QRegularExpression value_expression{QString("(?<spaces>[\\s\\t]*)?(?<enabled>/{2,})?[\\s\\t]*#define[\\s\\t]*%1[\\s\\t]*%2").arg(elements_iterator.key()).arg(QRegularExpression::escape(original_values.value(elements_iterator.key())))};
+
+      if (original_file_data.indexOf(value_expression) != original_file_data.lastIndexOf(value_expression)) {
+        QRegularExpressionMatchIterator value_match_iterator = value_expression.globalMatch(original_file_data);
+
+      }
+      else {
+        QRegularExpressionMatch match = value_expression.match(original_file_data);
+        if (match.hasMatch()) {
+          QString match_enabled = match.captured("enabled");
+          if (value == original_values.value(elements_iterator.key()) && match_enabled == enabled) {
+            continue;
+          }
+
+          if (!value.isEmpty()) {
+            QString match_spaces = match.captured("spaces");
+            original_file_data = original_file_data.replace(value_expression, match_spaces + enabled + "#define " + elements_iterator.key() + " " + value);
+            qDebug() << value_expression.pattern() << "\n" << value << "=="
+                     << original_values.value(elements_iterator.key())
+                     << (value == original_values.value(elements_iterator.key()))
+                     << match_enabled << "==" << enabled << (match_enabled == enabled);
+          }
+        }
+      }
+    }
+  }
+  QFile out_file{QDir::homePath() + "/Configuration.h"};
+  if (!out_file.open(QFile::WriteOnly)) {
+    return;
+  }
+  out_file.write(original_file_data.toStdString().data());
+  out_file.flush();
+  out_file.close();
+}
+
+void MainWindow::parseJson(QString &json_string_parameter, QComboBox *combo_bos) {
+  QString json_string = json_string_parameter.replace('\'', '"');
+  if (json_string[0] != '[') {
+    json_string = "[" + json_string + "]";
+  }
+  QRegularExpression incorrect_key{"[\\s\\t]*(?<comma>[,])?[\\s\\t]*(?<key>[^\\[\\{\"\\:]+):"};
+  QRegularExpressionMatchIterator incorrect_key_iterator = incorrect_key.globalMatch(json_string);
+  while (incorrect_key_iterator.hasNext()) {
+    QRegularExpressionMatch match = incorrect_key_iterator.next();
+    QRegularExpression current_incorrect_key{QString("[,]?[\\s\\t]*%1[\\s\\t]*:").arg(match.captured("key"))};
+    json_string = json_string.replace(current_incorrect_key, match.captured("comma") + "\"" + match.captured("key").trimmed() + "\":");
+  }
+  QRegularExpression fix_expression{"\":[\\s\\t]*\"(?<text>.*?)\",[\\s\\t]*\""};
+  QRegularExpressionMatchIterator fix_expression_iterator = fix_expression.globalMatch(json_string);
+  while (fix_expression_iterator.hasNext()) {
+    QRegularExpressionMatch match = fix_expression_iterator.next();
+    QString temp_vcalue = match.captured("text");
+    temp_vcalue = temp_vcalue.replace("\\", "\\\\");
+    temp_vcalue = temp_vcalue.replace("\"", "\\\"");
+    json_string = json_string.replace(match.captured("text"), temp_vcalue);
+  }
+  QJsonDocument jsonResponse = QJsonDocument::fromJson(json_string.toUtf8());
+  QJsonArray jsonArray = jsonResponse.array();
+
+  foreach (const QJsonValue & value, jsonArray) {
+    if (value.isObject()) {
+      QJsonObject obj = value.toObject();
+      foreach (const QString key, obj.keys()) {
+        combo_bos->addItem(key + " - " + obj[key].toVariant().toString(), key);
+      }
+    }
+    else {
+      combo_bos->addItem(value.toVariant().toString(), value.toVariant().toString());
+    }
+  }
 }
