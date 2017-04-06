@@ -34,6 +34,12 @@ private:
   QMap<QString, QWidget*> values;
   QMap<QString, QString> original_values;
   QString original_file_data;
+
+  QMap<QString, QWidget*> section_tabs_adv;
+  QMap<QString, QWidget*> elements_adv;
+  QMap<QString, QWidget*> values_adv;
+  QMap<QString, QString> original_values_adv;
+  QString original_file_data_adv;
 };
 
 #endif // MAINWINDOW_H
